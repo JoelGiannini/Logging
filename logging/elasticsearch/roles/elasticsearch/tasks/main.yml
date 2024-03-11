@@ -1,0 +1,279 @@
+- name: Copy rpm
+  copy:
+     src: src/elasticsearch-8.6.1-x86_64.rpm
+     dest: /tmp/elasticsearch-8.6.1-x86_64.rpm
+
+- name: Import elasticsearch key
+  ansible.builtin.shell: export http_proxy=http://proxy2.arg.igrupobbva:8280; export https_proxy=http://proxy2.arg.igrupobbva:8280; rpm --import https://artifacts.elastic.co/GPG-KEY-elasticsearch
+
+- name: Install elasticsearch rpm.
+  yum:
+     name: /tmp/elasticsearch-8.6.1-x86_64.rpm
+     state: present
+
+- name: Create elasticsearch VG
+  community.general.lvg:
+    vg: elastc-data-vg
+    pvs: /dev/xvdb
+    pvresize: true
+
+- name: create elasticsearch lv
+  community.general.lvol:
+    vg: elastc-data-vg
+    lv: elastc-data-lv
+    size: +100%FREE
+
+- name: mkfs.xfs
+  community.general.filesystem:
+    fstype: xfs
+    dev: /dev/elastc-data-vg/elastc-data-lv
+
+- name: Mount /var/lib/elasticsearch
+  ansible.posix.mount:
+    path: /var/lib/elasticsearch
+    src: /dev/elastc-data-vg/elastc-data-lv
+    fstype: xfs
+    state: mounted
+
+- name: Change ownership in  /var/lib/elasticsearch
+  ansible.builtin.file:
+    path: /var/lib/elasticsearch
+    owner: elasticsearch
+    group: elasticsearch
+
+
+- name: Install the latest version of expect
+  ansible.builtin.yum:
+    name: expect
+    state: latest
+
+- name: Install the latest version of unzip
+  ansible.builtin.yum:
+    name: unzip
+    state: latest
+
+- name: create /etc/sysconfig/elasticsearch
+  ansible.builtin.shell: echo "ES_PATH_CONF=/etc/elasticsearch" > /etc/sysconfig/elasticsearch
+
+- name: Create directory for data
+  file:
+    path: /var/lib/elasticsearch/{{node_name}}
+    state: directory
+    owner: elasticsearch
+    group: elasticsearch
+
+- name: Create directory for logs
+  file:
+    path: /var/log/elasticsearch/{{node_name}}
+    state: directory
+    owner: elasticsearch
+    group: elasticsearch
+
+- name: disable service firewalld
+  ansible.builtin.service:
+    name: firewalld
+    enabled: no
+
+- name: Stop firewalld
+  ansible.builtin.service:
+    name: firewalld
+    state: stopped
+
+- name: check /etc/elasticsearch/{{node-name}} directory
+  ansible.builtin.stat:
+    path: /etc/elasticsearch/{{node_name}}
+  register: check_directory_master_1
+
+- name: rename elasticsearch config directory
+  ansible.builtin.shell: mv /etc/elasticsearch /etc/{{node_name}};
+  when: not check_directory_master_1.stat.exists
+
+- name: Create directory /etc/elasticsearch
+  file:
+    path: /etc/elasticsearch
+    state: directory
+    owner: root
+    group: elasticsearch
+
+- name: rename elasticsearch config directory
+  ansible.builtin.shell: mv /etc/{{node_name}} /etc/elasticsearch;
+  when: not check_directory_master_1.stat.exists
+
+- name: Create directory jvm.options.d
+  file:
+    path: /etc/elasticsearch/{{node_name}}/jvm.options.d
+    state: directory
+    owner: root
+    group: elasticsearch
+    mode: 0750
+
+- name: Ram limit
+  template:
+      src: elastic.options.j2
+      dest: /etc/elasticsearch/{{node_name}}/jvm.options.d/elastic.options
+
+- name: Configuration elasticsearch.yml
+  template:
+    src: elasticsearch.yml.j2
+    dest: /etc/elasticsearch/{{node_name}}/elasticsearch.yml
+    owner: elasticsearch
+    group: elasticsearch
+
+- name: Create directory certs
+  file:
+    path: /etc/elasticsearch/{{node_name}}/certs
+    state: directory
+    owner: root
+    group: elasticsearch
+    mode: 0750
+
+- name: generate generate_certificates.yml for sign certificate
+  ansible.builtin.blockinfile:
+    path: /tmp/generate_certificates.yml
+    create: true
+    block: |
+      instances:
+         - name: {{node_name}}
+           ip:
+             - {{ansible_host}}
+
+- name: Copy auto_generate_cert.exp
+  copy:
+     src: src/auto_generate_cert.exp
+     dest: /tmp/auto_generate_cert.exp
+     owner: root
+     group: root
+     mode: 0775
+
+- name: Copy cert ca.pem
+  copy:
+     src: certificates/elastic_ca.pem
+     dest: /etc/elasticsearch/{{node_name}}/certs/elastic_ca.pem
+     owner: root
+     group: elasticsearch
+     mode: 0660
+
+- name: Copy ca
+  copy:
+     src: certificates/elastic_ca
+     dest: /tmp/elastic_ca
+
+- name: Remove file (delete file)
+  ansible.builtin.file:
+    path: /tmp/certificates.zip
+    state: absent
+
+- name: auto-generate certificate
+  ansible.builtin.command: /tmp/auto_generate_cert.exp
+
+- name: unzip certificates.zip
+  unarchive:
+    src: /tmp/certificates.zip
+    dest: /tmp
+    remote_src: yes
+
+- name: Copy certificates files into /etc/elasticsearch/certs
+  copy:
+    src: "{{ item }}"
+    dest: /etc/elasticsearch/{{node_name}}/certs
+    owner: elasticsearch
+    group: elasticsearch
+    mode: 0660
+    remote_src: yes
+  with_items:
+    - /tmp/{{node_name}}/{{node_name}}.key
+    - /tmp/{{node_name}}/{{node_name}}.crt
+
+- name: reload daemon
+  ansible.builtin.shell: systemctl daemon-reload
+
+- name: Enable service elasticsearch
+  ansible.builtin.service:
+    name: elasticsearch
+    enabled: yes
+
+- name: Create directory for PID for {{node_name}}
+  file:
+    path: /run/elasticsearch-{{node_name}}
+    state: directory
+    owner: elasticsearch
+    group: root
+
+- name: remove files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+    with_items:
+      - /tmp/{{node_name}}
+      - /tmp/{{node_name}}.crt
+      - /tmp/{{node_name}}.key
+      - /tmp/elasticsearch-*.rpm
+      - /tmp/certificates.zip
+      - /tmp/generate_certificates.yml
+
+- name: create init for {{node_name}}
+  template:
+      src: elasticsearch.services1.yml.j2
+      dest: /usr/lib/systemd/system/elasticsearch-{{node_name}}.service
+
+- name: create elasticsearch.conf {{node_name}}
+  template:
+    src: elasticsearch1.conf.j2
+    dest: /usr/lib/tmpfiles.d/elasticsearch-{{node_name}}.conf      
+
+- name: clean /etc/elasticsearch/elasticsearch.yml
+  ansible.builtin.shell: echo "" > /etc/sysconfig/elasticsearch
+
+- name: reload daemon
+  ansible.builtin.shell: systemctl daemon-reload
+
+- name: enable service Elasticsearch
+  ansible.builtin.service:
+    name: elasticsearch-{{node_name}}
+    enable: true 
+
+- name: Start service Elasticsearch
+  ansible.builtin.service:
+    name: elasticsearch-{{node_name}}
+    state: started
+
+- name: Configure user certificate in sshd_config
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    line: 'export ES_PATH_CONF=/etc/elasticsearch/{{node_name}}'
+
+- name:  Copy script to set elastic user
+  copy:
+     src: src/change_pass.exp
+     dest: /tmp
+     owner: root
+     group: root
+     mode: 0775
+
+- name: disable cluster.initial_master_nodes for {{node_name}}
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/{{node_name}}/elasticsearch.yml
+    regexp: '^cluster.initial_master_nodes:'
+    line: "#cluster.initial_master_nodes: {{master_hosts}}"
+
+
+- name: Remove file (delete file)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+    with_items:
+      - /tmp/change_pass.exp
+      - /tmp/elasticsearch-*.rpm
+      - /tmp/certificates.zip
+      - /tmp/generate_certificates.yml
+      - /tmp/auto_generate_cert.exp
+      - /tmp/elastic_ca
+
+- name: set kibana user
+  ansible.builtin.command: /tmp/change_pass.exp kibana NoblezaGaucha
+  ignore_errors: true
+
+- name: set elastic user
+  ansible.builtin.command: /tmp/change_pass.exp elastic NoblezaGaucha
+  ignore_errors: true
+

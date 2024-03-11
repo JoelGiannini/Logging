@@ -1,0 +1,95 @@
+- name: Copy rpm 
+  copy:
+     src: src/kibana-8.6.1-x86_64.rpm
+     dest: /tmp/kibana-8.6.1-x86_64.rpm
+
+- name: Install elasticsearch rpm.
+  yum:
+     name: /tmp/kibana-8.6.1-x86_64.rpm
+     state: present
+
+- name: Create directory certs
+  file:
+    path: /etc/kibana/certs
+    state: directory
+    owner: root
+    group: kibana
+    mode: 0750
+
+- name: Copy cert ca 
+  copy:
+     src: certificates/elastic_ca
+     dest: /tmp/elastic_ca
+     owner: root
+     group: kibana
+     mode: 0660
+
+- name: Copy cert ca.pem
+  copy:
+     src: certificates/elastic_ca.pem
+     dest: /etc/kibana/certs/elastic_ca.pem
+     owner: root
+     group: kibana
+     mode: 0660     
+
+- name: generate generate_certificates.yml for sign kibana
+  ansible.builtin.blockinfile:
+    path: /tmp/generate_certificates.yml
+    create: true
+    block: |
+      instances:
+         - name: {{node_name}}
+           ip:
+             - {{ansible_host}}
+
+- name: Copy auto_generate_cert.exp
+  copy:
+     src: src/auto_generate_cert.exp
+     dest: /tmp/auto_generate_cert.exp
+     owner: root
+     group: root
+     mode: 0775
+
+- name: auto-generate certificate
+  ansible.builtin.command: /tmp/auto_generate_cert.exp
+
+- name: unzip certificates.zip
+  unarchive:
+    src: /tmp/certificates.zip
+    dest: /tmp
+    remote_src: yes
+
+- name: Copy certificates files into /etc/kibana/certs
+  copy:
+    src: "{{ item }}"
+    dest: /etc/kibana/certs
+    owner: kibana
+    group: kibana
+    mode: 0660
+    remote_src: yes
+  with_items:
+    - /tmp/{{node_name}}/{{node_name}}.key
+    - /tmp/{{node_name}}/{{node_name}}.crt
+
+- name: Remove file (delete file)
+  ansible.builtin.file:
+    path: /tmp/certificates.zip
+    state: absent
+
+- name: Configuration kibana.yml
+  template:
+      src: kibana.yml.j2
+      dest: /etc/kibana/kibana.yml
+
+- name: reload daemon
+  ansible.builtin.shell: systemctl daemon-reload
+
+- name: Enable service kibana
+  ansible.builtin.service:
+    name: kibana
+    enabled: yes
+
+- name: Restart service sshd
+  ansible.builtin.service:
+    name: kibana
+    state: started

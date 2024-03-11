@@ -1,0 +1,182 @@
+- name: Copy rpm 
+  copy:
+     src: src/elasticsearch-8.4.3-x86_64.rpm
+     dest: /tmp/elasticsearch-8.4.3-x86_64.rpm
+
+- name: Install elasticsearch rpm.
+  yum:
+     name: /tmp/elasticsearch-8.4.3-x86_64.rpm
+     state: present
+
+- name: Create directory certs
+  file:
+    path: /etc/elasticsearch/certs
+    state: directory
+    owner: root
+    group: elasticsearch
+    mode: 0750
+
+- name: Copy cert crt 
+  copy:
+     src: certificates/{{certificate_crt}}
+     dest: /etc/elasticsearch/certs/{{certificate_crt}}
+     owner: root
+     group: elasticsearch
+     mode: 0660
+     
+- name: Copy cert key
+  copy:
+     src: certificates/{{certificate_key}}
+     dest: /etc/elasticsearch/certs/{{certificate_key}}
+     owner: root
+     group: elasticsearch
+     mode: 0660
+
+- name: Copy cert ca 
+  copy:
+     src: certificates/{{ca}}
+     dest: /etc/elasticsearch/certs/{{ca}}
+     owner: root
+     group: elasticsearch
+     mode: 0660
+
+- name: clean /etc/elasticsearch/elasticsearch.yml
+  ansible.builtin.shell: echo "" > /etc/elasticsearch/elasticsearch.yml
+
+- name: Configure elasticsearch cluster name
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'cluster.name: {{cluster_name}}'
+
+- name: Configure elasticsearch node name
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'node.name: {{node_name}}'
+
+- name: Configure elasticsearch path data
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'path.data: /var/lib/elasticsearch'
+
+- name: Configure elasticsearch path log
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'path.logs: /var/log/elasticsearch'
+
+- name: Configure elasticsearch network host
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'network.host: ["0.0.0.0"]'
+
+- name: Configure elasticsearch port
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'http.port: {{port}}'
+
+- name: Configure elasticsearch seed hosts
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'discovery.seed_hosts: [{{seed_hosts}}]'
+
+- name: Configure elasticsearch master hosts
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'cluster.initial_master_nodes: [{{master_hosts}}]'
+
+- name: Configure elasticsearch http hosts
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'http.host: 0.0.0.0'
+
+- name: Configure elasticsearch security
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'xpack.security.enabled: true'
+
+- name: Configure elasticsearch http security
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'xpack.security.http.ssl.enabled: true'
+
+- name: Configure elasticsearch internal transport security
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'xpack.security.transport.ssl.enabled: true'
+
+- name: Configure elasticsearch http key certificate
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'xpack.security.http.ssl.key: certs/{{certificate_key}}'
+
+- name: Configure elasticsearch http crt certificate
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'xpack.security.http.ssl.certificate: certs/{{certificate_crt}}'
+
+- name: Configure elasticsearch http ca certificate
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'xpack.security.http.ssl.certificate_authorities: certs/{{ca}}'
+
+- name: Configure elasticsearch transport key certificate
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'xpack.security.transport.ssl.key: certs/{{certificate_key}}'
+
+- name: Configure elasticsearch transport crt certificate
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'xpack.security.transport.ssl.certificate: certs/{{certificate_crt}}'
+
+- name: Configure elasticsearch transport ca certificate
+  ansible.builtin.lineinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    line: 'xpack.security.transport.ssl.certificate_authorities: certs/{{ca}}'
+
+- name: open traffic port
+  firewalld:
+    zone: public
+    port: "{{port}}/tcp"
+    permanent: true
+    state: enabled
+    
+- name: open elasticsearch internal communication port
+  firewalld:
+    zone: public
+    port: 9300/tcp
+    permanent: true
+    state: enabled
+ 
+- name: reload daemon
+  ansible.builtin.shell: systemctl daemon-reload
+
+- name: Enable service elasticsearch
+  ansible.builtin.service:
+    name: elasticsearch
+    enabled: yes
+
+- name: Restart service sshd
+  ansible.builtin.service:
+    name: elasticsearch
+    state: started
+
+- name: Install the latest version of expect
+  ansible.builtin.yum:
+    name: expect
+    state: latest 
+
+- name: Copy script to set kibana user
+  copy:
+     src: src/set_kibana_user.exp
+     dest: /tmp
+
+- name:  Copy script to set elastic user
+  copy:
+     src: src/set_elastic_user.exp
+     dest: /tmp
+
+- name: set kibana user
+  ansible.builtin.shell: /tmp/set_kibana_user.exp
+
+- name: set elastic user
+  ansible.builtin.shell: /tmp/set_elastic_user.exp

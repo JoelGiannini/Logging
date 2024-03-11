@@ -1,0 +1,22 @@
+cluster.name: {{cluster_name}}
+node.name: {{node_name2}}
+path.data: /var/lib/elasticsearch/{{node_name2}}
+path.logs: /var/log/elasticsearch/{{node_name2}}
+network.host: [{{service_ip}}]
+http.port: {{https_port2}}
+transport.port: {{transport_port2}}
+discovery.seed_hosts: {{seed_hosts}}
+cluster.initial_master_nodes: {{master_hosts}}
+http.host: {{service_ip}}
+xpack.security.enabled: true
+xpack.security.http.ssl.enabled: true
+xpack.security.transport.ssl.enabled: true
+xpack.security.http.ssl.key: certs/{{node_name2}}.key
+xpack.security.http.ssl.certificate: certs/{{node_name2}}.crt
+xpack.security.http.ssl.certificate_authorities: certs/elastic_ca.pem
+xpack.security.transport.ssl.key: certs/{{node_name2}}.key
+xpack.security.transport.ssl.certificate: certs/{{node_name2}}.crt
+xpack.security.transport.ssl.certificate_authorities: certs/elastic_ca.pem
+{% if node_roles2 is defined %}
+node.roles: {{ node_roles2 }}
+{% endif %}

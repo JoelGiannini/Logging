@@ -1,0 +1,17 @@
+#!/usr/bin/expect -f
+set timeout 120
+set user [lindex $argv 0]
+set pass [lindex $argv 1]
+spawn /usr/share/elasticsearch/bin/elasticsearch-reset-password -u $user -i
+expect "*y/N*"
+send -- "y\r"
+expect "*password*"
+send -- "$pass\r"
+sleep 1
+expect "*password*"
+send -- "$pass\r"
+sleep 1
+#send -- "show status\r"
+#sleep 10
+#send -- "exit\r"
+expect eof

@@ -1,0 +1,21 @@
+server.host: "{{kibana_host}}"
+server.port: {{port}}
+elasticsearch.hosts: [{{elastic_hosts}}]
+server.ssl.enabled: true
+server.ssl.key: /etc/kibana/certs/{{node_name}}.key
+server.ssl.certificate: /etc/kibana/certs/{{node_name}}.crt
+elasticsearch.ssl.certificateAuthorities: [ "/etc/kibana/certs/elastic_ca.pem" ]
+elasticsearch.username: "kibana"
+elasticsearch.password: "NoblezaGaucha"
+logging:
+  appenders:
+    file:
+      type: file
+      fileName: /var/log/kibana/kibana.log
+      layout:
+        type: json
+  root:
+    appenders:
+      - default
+      - file
+pid.file: /run/kibana/kibana.pid

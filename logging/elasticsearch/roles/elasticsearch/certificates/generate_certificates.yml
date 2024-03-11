@@ -1,0 +1,4 @@
+instances:
+   - name: "NODE-NAME"
+     ip:
+       - "IP"
